@@ -116,11 +116,30 @@ async function commitAndPushLines(lines, options = {}) {
       putBody.sha = existingSha;
     }
 
-    const putRes = await fetch(apiUrl, {
+    let putRes = await fetch(apiUrl, {
       method: 'PUT',
       headers,
       body: JSON.stringify(putBody),
     });
+
+    // If failed on a brand-new empty repository (0 commits, branch ref not created yet),
+    // retry creating the root commit without specifying a branch to let GitHub initialize the default branch
+    if (!putRes.ok && !existingSha && putBody.branch) {
+      addLog('INFO', `Branch '${branch}' not found yet. Attempting root commit to initialize empty repository...`);
+      const rootBody = { ...putBody };
+      delete rootBody.branch;
+
+      const retryRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(rootBody),
+      });
+
+      if (retryRes.ok) {
+        putRes = retryRes;
+        addLog('SUCCESS', `Successfully initialized empty repository with root commit!`);
+      }
+    }
 
     if (!putRes.ok) {
       const errBody = await putRes.text();
