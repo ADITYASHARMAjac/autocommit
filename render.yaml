@@ -1,0 +1,36 @@
+# ==============================================================================
+# Render Blueprint Specification (Infrastructure as Code)
+# https://render.com/docs/blueprint-spec
+# ==============================================================================
+
+services:
+  - type: web
+    name: autocommit-agent
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: AI_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: AI_MODEL
+        value: nvidia/nemotron-3-ultra-550b-a55b
+      - key: NEMOTRON_API_KEY
+        sync: false # Set in Render Dashboard
+      - key: AI_API_KEY
+        sync: false # Set in Render Dashboard (or use NEMOTRON_API_KEY)
+      - key: GITHUB_TOKEN
+        sync: false # Set in Render Dashboard
+      - key: GITHUB_REPO
+        sync: false # Set in Render Dashboard (e.g. username/repo-name)
+      - key: GITHUB_BRANCH
+        value: main
+      - key: TARGET_FILE_PATH
+        value: daily-log.md
+      - key: CRON_SCHEDULE
+        value: "0 9,14,20 * * *"
+      - key: CRON_TIMEZONE
+        value: UTC

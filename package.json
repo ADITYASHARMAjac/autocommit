@@ -1,0 +1,28 @@
+{
+  "name": "auto-commit-agent",
+  "version": "1.0.0",
+  "description": "Autonomous Git Agent that commits and pushes 5 AI-generated lines 3 times daily, deployable on Render.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "trigger": "node -e \"require('dotenv').config(); require('./src/commitAgent').commitAgent.executeCycle('cli-test');\""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "git",
+    "auto-commit",
+    "nvidia-nemotron",
+    "render",
+    "agent"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3"
+  }
+}
