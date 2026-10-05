@@ -10,6 +10,7 @@ const { commitAgent } = require('./commitAgent');
 const { initScheduler, getSchedulerStatus } = require('./scheduler');
 const { getLogs, addLog } = require('./logger');
 const { DEFAULT_MODEL } = require('./aiService');
+const { resolveGitIdentity, maskEmail } = require('./githubService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,7 +39,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Status endpoint for dashboard telemetry
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
   const agentStatus = commitAgent.getStatus();
   const schedulerStatus = getSchedulerStatus();
 
@@ -50,6 +51,14 @@ app.get('/api/status', (req, res) => {
     process.env.NVIDIA_API_KEY;
   const githubToken = process.env.GITHUB_TOKEN;
   const githubRepo = process.env.GITHUB_REPO;
+
+  let gitIdentity = { name: 'ADITYASHARMAjac', email: null };
+  try {
+    const owner = githubRepo ? githubRepo.split('/')[0] : 'ADITYASHARMAjac';
+    gitIdentity = await resolveGitIdentity(githubToken, owner);
+  } catch (_) {
+    // Non-fatal if offline
+  }
 
   const configHealth = {
     ai: {
@@ -64,6 +73,9 @@ app.get('/api/status', (req, res) => {
       branch: process.env.GITHUB_BRANCH || 'main',
       targetFile: process.env.TARGET_FILE_PATH || 'daily-log.md',
       status: (githubToken && githubRepo) ? 'Ready to Commit' : 'Missing GITHUB_TOKEN or GITHUB_REPO',
+      authorName: gitIdentity.name,
+      authorEmailMasked: gitIdentity.email ? maskEmail(gitIdentity.email) : null,
+      isAttributionConfigured: !!(gitIdentity.name && gitIdentity.email),
     },
     schedule: {
       expression: schedulerStatus.expression,
@@ -101,10 +113,24 @@ app.get('/api/logs', (req, res) => {
 });
 
 // Start listening and initialize scheduler
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   addLog('SUCCESS', `Auto-Commit Agent server listening on port ${PORT}`);
   addLog('INFO', `Render Web Service Ready: http://0.0.0.0:${PORT}`);
   
+  // Auto-configure Git runtime & log attribution
+  try {
+    const repoInput = process.env.GITHUB_REPO;
+    const owner = repoInput ? repoInput.split('/')[0] : 'ADITYASHARMAjac';
+    const identity = await resolveGitIdentity(process.env.GITHUB_TOKEN, owner);
+    if (identity.email) {
+      addLog('SUCCESS', `Git Author Attribution configured: ${identity.name} <${maskEmail(identity.email)}>`);
+    } else {
+      addLog('WARN', 'Git Author Email not set. Set GIT_AUTHOR_EMAIL in Render Dashboard for contribution heatmap attribution.');
+    }
+  } catch (err) {
+    addLog('WARN', `Git identity initialization notice: ${err.message}`);
+  }
+
   // Start the 3x daily cron scheduler
   initScheduler();
 });

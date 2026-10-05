@@ -30,6 +30,10 @@ services:
         value: main
       - key: TARGET_FILE_PATH
         value: daily-log.md
+      - key: GIT_AUTHOR_NAME
+        value: ADITYASHARMAjac
+      - key: GIT_AUTHOR_EMAIL
+        sync: false # Set in Render Dashboard to your GitHub verified email
       - key: CRON_SCHEDULE
         value: "0 9,14,20 * * *"
       - key: CRON_TIMEZONE

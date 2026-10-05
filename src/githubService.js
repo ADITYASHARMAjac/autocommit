@@ -2,7 +2,113 @@
  * GitHub Service for committing and pushing 5 lines directly via GitHub REST API
  * Optimized for container/Render hosting with zero local git storage requirements.
  */
+const { execSync } = require('child_process');
 const { addLog } = require('./logger');
+
+let cachedGitIdentity = null;
+let lastEnvSignature = '';
+
+/**
+ * Masks email address for display in logs and telemetry
+ */
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return '';
+  const parts = email.split('@');
+  if (parts.length !== 2) return '***';
+  const name = parts[0];
+  const domain = parts[1];
+  const maskedName = name.length > 3 ? `${name.substring(0, 3)}***` : `${name.substring(0, 1)}***`;
+  return `${maskedName}@${domain}`;
+}
+
+/**
+ * Configures git globally inside the runtime container if git CLI is present
+ */
+function applyGitConfig(name, email) {
+  try {
+    if (name) {
+      execSync(`git config --global user.name "${name.replace(/"/g, '\\"')}"`, { stdio: 'ignore' });
+    }
+    if (email) {
+      execSync(`git config --global user.email "${email.replace(/"/g, '\\"')}"`, { stdio: 'ignore' });
+    }
+    return true;
+  } catch (_) {
+    // Non-fatal if git CLI is absent or filesystem is read-only
+    return false;
+  }
+}
+
+/**
+ * Resolves Git author and committer identity.
+ * Prioritizes Render environment variables, falling back to GitHub token user discovery.
+ */
+async function resolveGitIdentity(token, owner) {
+  const envName = process.env.GIT_AUTHOR_NAME || process.env.COMMITTER_NAME || process.env.GITHUB_USER;
+  const envEmail = process.env.GIT_AUTHOR_EMAIL || process.env.COMMITTER_EMAIL || process.env.GITHUB_EMAIL;
+  const currentSignature = `${envName || ''}:${envEmail || ''}:${token ? 'hasToken' : 'noToken'}:${owner || ''}`;
+
+  if (cachedGitIdentity && lastEnvSignature === currentSignature) {
+    return cachedGitIdentity;
+  }
+
+  let name = envName;
+  let email = envEmail;
+
+  if (!name && owner) {
+    name = owner;
+  }
+
+  // If email or name is missing, attempt to auto-fetch the authenticated user profile via GitHub API
+  if (token && (!name || !email)) {
+    try {
+      const headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'AutoCommit-Agent-Service',
+      };
+
+      const userRes = await fetch('https://api.github.com/user', { headers });
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        if (!name) {
+          name = userData.name || userData.login;
+        }
+        if (!email && userData.email) {
+          email = userData.email;
+        }
+      }
+
+      // If email is still missing (e.g. email set to private in GitHub profile), check /user/emails
+      if (!email) {
+        const emailsRes = await fetch('https://api.github.com/user/emails', { headers });
+        if (emailsRes.ok) {
+          const emails = await emailsRes.json();
+          if (Array.isArray(emails) && emails.length > 0) {
+            const primary = emails.find(e => e.primary && e.verified) || emails.find(e => e.verified) || emails[0];
+            if (primary && primary.email) {
+              email = primary.email;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      addLog('WARN', `Could not auto-fetch GitHub user email: ${err.message}`);
+    }
+  }
+
+  // Fallback default name if still empty
+  if (!name) {
+    name = 'ADITYASHARMAjac';
+  }
+
+  // Ensure git CLI in container environment matches this identity
+  applyGitConfig(name, email);
+
+  cachedGitIdentity = { name, email: email || null };
+  lastEnvSignature = currentSignature;
+  return cachedGitIdentity;
+}
 
 /**
  * Parses repo string into owner and repo name
@@ -24,8 +130,6 @@ async function commitAndPushLines(lines, options = {}) {
   const repoInput = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const filePath = process.env.TARGET_FILE_PATH || 'daily-log.md';
-  const committerName = process.env.COMMITTER_NAME || 'AutoCommit Agent';
-  const committerEmail = process.env.COMMITTER_EMAIL || 'agent@autocommit.local';
 
   const { owner, repo } = parseRepo(repoInput);
 
@@ -43,6 +147,19 @@ async function commitAndPushLines(lines, options = {}) {
       filePath,
       branch,
     };
+  }
+
+  // Resolve author & committer identity
+  const identity = await resolveGitIdentity(token, owner);
+  const authorName = identity.name;
+  const authorEmail = identity.email;
+  const committerName = process.env.GIT_COMMITTER_NAME || process.env.COMMITTER_NAME || authorName;
+  const committerEmail = process.env.GIT_COMMITTER_EMAIL || process.env.COMMITTER_EMAIL || authorEmail;
+
+  if (authorEmail) {
+    addLog('INFO', `Git attribution configured: ${authorName} <${maskEmail(authorEmail)}>`);
+  } else {
+    addLog('WARN', 'Git author email missing! Set GIT_AUTHOR_EMAIL in Render Dashboard to ensure commits appear on your GitHub contribution graph.');
   }
 
   const cleanFilePath = filePath.replace(/^\//, '');
@@ -106,11 +223,22 @@ async function commitAndPushLines(lines, options = {}) {
       message: commitMessage,
       content: base64Content,
       branch: branch,
-      committer: {
+    };
+
+    // Explicitly configure author and committer so GitHub links the commit to the user account
+    if (authorName && authorEmail) {
+      putBody.author = {
+        name: authorName,
+        email: authorEmail,
+      };
+    }
+
+    if (committerName && committerEmail) {
+      putBody.committer = {
         name: committerName,
         email: committerEmail,
-      },
-    };
+      };
+    }
 
     if (existingSha) {
       putBody.sha = existingSha;
@@ -150,7 +278,7 @@ async function commitAndPushLines(lines, options = {}) {
     const commitSha = putData.commit?.sha;
     const commitUrl = putData.commit?.html_url || `https://github.com/${owner}/${repo}/commit/${commitSha}`;
 
-    addLog('SUCCESS', `Pushed commit to ${owner}/${repo} (${commitSha?.substring(0, 7)})`, {
+    addLog('SUCCESS', `Pushed commit to ${owner}/${repo} (${commitSha?.substring(0, 7)}) attributed to ${authorName}`, {
       commitUrl,
       linesCount: lines.length,
     });
@@ -163,6 +291,8 @@ async function commitAndPushLines(lines, options = {}) {
       filePath: cleanFilePath,
       branch,
       repo: `${owner}/${repo}`,
+      author: authorName,
+      authorEmail: authorEmail ? maskEmail(authorEmail) : null,
       timestamp: timestampStr,
       lines,
     };
@@ -178,6 +308,7 @@ async function commitAndPushLines(lines, options = {}) {
 async function testGitHubConnection() {
   const token = process.env.GITHUB_TOKEN;
   const repoInput = process.env.GITHUB_REPO;
+  const targetBranch = process.env.GITHUB_BRANCH || 'main';
   const { owner, repo } = parseRepo(repoInput);
 
   if (!token || !owner || !repo) {
@@ -188,6 +319,8 @@ async function testGitHubConnection() {
   }
 
   try {
+    const identity = await resolveGitIdentity(token, owner);
+
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
@@ -198,12 +331,18 @@ async function testGitHubConnection() {
 
     if (res.status === 200) {
       const data = await res.json();
+      const isDefaultBranch = targetBranch === data.default_branch;
       return {
         configured: true,
         valid: true,
         repoFullName: data.full_name,
         isPrivate: data.private,
         defaultBranch: data.default_branch,
+        targetBranch,
+        isDefaultBranch,
+        authorName: identity.name,
+        authorEmailMasked: identity.email ? maskEmail(identity.email) : null,
+        isAttributionConfigured: !!(identity.name && identity.email),
       };
     } else {
       const err = await res.json();
@@ -226,5 +365,8 @@ async function testGitHubConnection() {
 module.exports = {
   commitAndPushLines,
   testGitHubConnection,
+  resolveGitIdentity,
+  applyGitConfig,
+  maskEmail,
   parseRepo,
 };

@@ -144,10 +144,30 @@ function updateChecklist(config) {
     descGhToken.textContent = 'GITHUB_TOKEN or GITHUB_REPO missing';
   }
 
+  // Git Author Attribution Check
+  const gitAuthorItem = document.getElementById('itemGitAuthor');
+  const descGitAuthor = document.getElementById('descGitAuthor');
+  if (gitAuthorItem && descGitAuthor) {
+    const authorIcon = gitAuthorItem.querySelector('.check-icon');
+    if (config.github?.isAttributionConfigured) {
+      authorIcon.className = 'check-icon status-ok';
+      descGitAuthor.textContent = `Author: ${config.github.authorName} (${config.github.authorEmailMasked})`;
+    } else if (config.github?.authorName) {
+      authorIcon.className = 'check-icon status-warn';
+      descGitAuthor.textContent = `Author: ${config.github.authorName} (Set GIT_AUTHOR_EMAIL in Render)`;
+    } else {
+      authorIcon.className = 'check-icon status-warn';
+      descGitAuthor.textContent = 'Set GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL in Render';
+    }
+  }
+
   // Overall Badge
-  if (config.ai.isConfigured && config.github.isConfigured) {
+  if (config.ai.isConfigured && config.github.isConfigured && config.github?.isAttributionConfigured) {
     configOverallBadge.textContent = 'Production Ready';
     configOverallBadge.className = 'status-chip chip-green';
+  } else if (config.ai.isConfigured && config.github.isConfigured) {
+    configOverallBadge.textContent = 'Attribution Setup Recommended';
+    configOverallBadge.className = 'status-chip chip-amber';
   } else {
     configOverallBadge.textContent = 'Configuration Needed';
     configOverallBadge.className = 'status-chip chip-amber';

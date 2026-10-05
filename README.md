@@ -55,6 +55,8 @@ Before deploying, ensure you have:
    - `NEMOTRON_API_KEY` (or `AI_API_KEY`): Your NVIDIA Nemotron API key (`nvapi-...`).
    - `GITHUB_TOKEN`: Your GitHub token (`ghp_...`).
    - `GITHUB_REPO`: Your target repository (`username/repo-name`).
+   - `GIT_AUTHOR_NAME`: Your GitHub username (default: `ADITYASHARMAjac`).
+   - `GIT_AUTHOR_EMAIL`: Your GitHub verified email (e.g. `sharmaaditya26889@gmail.com`). **Required for GitHub contribution graph**.
 6. Click **"Apply"**. Render will build and launch your agent in under 2 minutes!
 
 ### Option B: Manual Web Service Setup on Render
@@ -72,13 +74,24 @@ Before deploying, ensure you have:
 | `NEMOTRON_API_KEY` | `nvapi-xxxxxxxxxxxx` | Your NVIDIA Nemotron 3 Ultra API Key |
 | `AI_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` | Target Nemotron model |
 | `GITHUB_TOKEN` | `ghp_xxxxxxxxxxxx` | GitHub Personal Access Token |
-| `GITHUB_REPO` | `your-user/your-repo` | Target repo to push commits to |
-| `GITHUB_BRANCH` | `main` | Branch to commit to |
+| `GITHUB_REPO` | `ADITYASHARMAjac/cronjob` | Target repo to push commits to |
+| `GITHUB_BRANCH` | `main` | Default branch to commit to |
+| `GIT_AUTHOR_NAME` | `ADITYASHARMAjac` | Commit author name (your GitHub username) |
+| `GIT_AUTHOR_EMAIL` | `sharmaaditya26889@gmail.com` | Verified GitHub email (Required for contribution graph) |
 | `TARGET_FILE_PATH` | `daily-log.md` | Target file for 5 lines |
 | `CRON_SCHEDULE` | `0 9,14,20 * * *` | 3 times daily cron |
 | `CRON_TIMEZONE` | `UTC` | Your timezone (e.g. `Asia/Kolkata`) |
 
 5. Click **"Deploy Web Service"**.
+
+---
+
+## 🟩 GitHub Contribution Graph Attribution Rules
+
+For your automated commits to turn your GitHub contribution graph green and show as committed by your profile:
+1. **Verified Email**: `GIT_AUTHOR_EMAIL` must match an email verified on your GitHub account ([GitHub Emails](https://github.com/settings/emails)).
+2. **Default Branch**: Commits must be made to the repository's default branch (`main`).
+3. **Graph Update Time**: GitHub computes contribution graphs asynchronously and can take up to 24 hours to refresh past heatmap squares.
 
 ---
 
